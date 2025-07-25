@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstdint>
 #include <thread>
+#include <iostream>
 
 #if defined(_MSC_VER)
 #pragma warning(disable: 4244 4267) // possible loss of data
@@ -173,7 +174,7 @@ static void sense_voice_print_usage(int /*argc*/, char ** argv, const sense_voic
     fprintf(stderr, "  -ng,       --no-gpu            [%-7s] disable GPU\n",                                    params.use_gpu ? "false" : "true");
     fprintf(stderr, "  -fa,       --flash-attn        [%-7s] flash attention\n",                                params.flash_attn ? "true" : "false");
     fprintf(stderr, "  -itn,      --use-itn           [%-7s] use itn\n",                                        params.use_itn ? "true" : "false");
-    fprintf(stderr, "  -prefix,      --use-prefix           [%-7s] use itn\n",                                        params.use_itn ? "true" : "false");
+    fprintf(stderr, "  -prefix,   --use-prefix        [%-7s] use prefix\n",                                     params.use_prefix ? "true" : "false");
     fprintf(stderr, "\n");
 }
 
@@ -423,25 +424,6 @@ int main(int argc, char ** argv) {
         return 1;
     }
 
-    // remove non-existent files
-    for (auto it = params.fname_inp.begin(); it != params.fname_inp.end();) {
-        const auto fname_inp = it->c_str();
-
-        if (*it != "-" && !is_file_exist(fname_inp)) {
-            fprintf(stderr, "error: input file not found '%s'\n", fname_inp);
-            it = params.fname_inp.erase(it);
-            continue;
-        }
-
-        it++;
-    }
-
-    if (params.fname_inp.empty()) {
-        fprintf(stderr, "error: no input files specified\n");
-        sense_voice_print_usage(argc, argv, params);
-        return 2;
-    }
-
     if (params.language != "auto" && sense_voice_lang_id(params.language.c_str()) == -1) {
         fprintf(stderr, "error: unknown language '%s'\n", params.language.c_str());
         sense_voice_print_usage(argc, argv, params);
@@ -470,9 +452,14 @@ int main(int argc, char ** argv) {
 
     ctx->language_id = sense_voice_lang_id(params.language.c_str());
 
-    for (int f = 0; f < (int) params.fname_inp.size(); ++f) {
-        const auto fname_inp = params.fname_inp[f];
-        const auto fname_out = f < (int) params.fname_out.size() && !params.fname_out[f].empty() ? params.fname_out[f] : params.fname_inp[f];
+    printf("[__INIT__]\n");
+    fflush(stdout);
+
+    std::string line;  
+    while (std::getline(std::cin, line)) {  
+        if (line == "exit") break;  
+
+        const auto fname_inp = line;
 
         std::vector<double> pcmf32;               // mono-channel F32 PCM
 
@@ -482,21 +469,6 @@ int main(int argc, char ** argv) {
             continue;
         }
 
-        if (!params.no_prints) {
-            // print system information
-            fprintf(stderr, "\n");
-            fprintf(stderr, "system_info: n_threads = %d / %d | %s\n",
-                    params.n_threads*params.n_processors, std::thread::hardware_concurrency(), sense_voice_print_system_info());
-
-            // print some info about the processing
-            fprintf(stderr, "\n");
-            fprintf(stderr, "%s: processing audio (%d samples, %.5f sec) , %d threads, %d processors, lang = %s...\n",
-                    __func__,  int(pcmf32.size()), float(pcmf32.size())/sample_rate,
-                    params.n_threads, params.n_processors,
-                    params.language.c_str());
-            ctx->state->duration = float(pcmf32.size())/sample_rate;
-            fprintf(stderr, "\n");
-        }
         sense_voice_full_params wparams = sense_voice_full_default_params(SENSE_VOICE_SAMPLING_GREEDY);
 
         {
@@ -529,8 +501,8 @@ int main(int argc, char ** argv) {
                                                                                 ggml_nbytes(ctx->state->vad_lstm_context)
                                                                                         + ggml_backend_get_alignment(ctx->state->backends[0]));
                 ctx->state->vad_lstm_hidden_state_buffer = ggml_backend_alloc_buffer(ctx->state->backends[0],
-                                                                                     ggml_nbytes(ctx->state->vad_lstm_hidden_state)
-                                                                                             + ggml_backend_get_alignment(ctx->state->backends[0]));
+                                                                                    ggml_nbytes(ctx->state->vad_lstm_hidden_state)
+                                                                                            + ggml_backend_get_alignment(ctx->state->backends[0]));
                 auto context_alloc = ggml_tallocr_new(ctx->state->vad_lstm_context_buffer);
                 ggml_tallocr_alloc(&context_alloc, ctx->state->vad_lstm_context);
 
@@ -665,12 +637,13 @@ int main(int argc, char ** argv) {
                 }
                 sense_voice_print_output(ctx, true, params.use_prefix, false);
             }
+            printf("[__DONE__]\n");
+            fflush(stdout);
         }
         SENSE_VOICE_LOG_INFO("\n%s: decoder audio use %f s, rtf is %f. \n\n",
-                              __func__,
-                              (ctx->state->t_encode_us + ctx->state->t_decode_us) / 1e6,
-                              (ctx->state->t_encode_us + ctx->state->t_decode_us) / (1e6 * ctx->state->duration));
-
+                            __func__,
+                            (ctx->state->t_encode_us + ctx->state->t_decode_us) / 1e6,
+                            (ctx->state->t_encode_us + ctx->state->t_decode_us) / (1e6 * ctx->state->duration));
     }
     sense_voice_free(ctx);
     return 0;
