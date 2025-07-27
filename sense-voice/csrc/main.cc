@@ -457,11 +457,31 @@ int main(int argc, char ** argv) {
 
     std::string line;  
     while (std::getline(std::cin, line)) {  
-        if (line == "exit") break;  
+        if (line == "exit") break;
+
+        // clear vad states
+        if (ctx->state->vad_ctx) {
+            ggml_free(ctx->state->vad_ctx);
+            ctx->state->vad_ctx = nullptr;
+        }
+        if (ctx->state->vad_lstm_context_buffer) {
+            ggml_backend_buffer_free(ctx->state->vad_lstm_context_buffer);
+            ctx->state->vad_lstm_context_buffer = nullptr;
+        }
+        if (ctx->state->vad_lstm_hidden_state_buffer) {
+            ggml_backend_buffer_free(ctx->state->vad_lstm_hidden_state_buffer);
+            ctx->state->vad_lstm_hidden_state_buffer = nullptr;
+        }
+        
+        // reset timers
+        ctx->state->t_encode_us = 0;
+        ctx->state->t_decode_us = 0;
+        ctx->state->t_feature_us = 0;
+
+        // --- --- --- --- --- ---
 
         const auto fname_inp = line;
-
-        std::vector<double> pcmf32;               // mono-channel F32 PCM
+        std::vector<double> pcmf32; // mono-channel F32 PCM
 
         int sample_rate;
         if (!::load_wav_file(fname_inp.c_str(), &sample_rate, pcmf32)) {
