@@ -455,33 +455,10 @@ int main(int argc, char ** argv) {
     printf("[__INIT__]\n");
     fflush(stdout);
 
-    std::string line;  
-    while (std::getline(std::cin, line)) {  
-        if (line == "exit") break;
-
-        // clear vad states
-        if (ctx->state->vad_ctx) {
-            ggml_free(ctx->state->vad_ctx);
-            ctx->state->vad_ctx = nullptr;
-        }
-        if (ctx->state->vad_lstm_context_buffer) {
-            ggml_backend_buffer_free(ctx->state->vad_lstm_context_buffer);
-            ctx->state->vad_lstm_context_buffer = nullptr;
-        }
-        if (ctx->state->vad_lstm_hidden_state_buffer) {
-            ggml_backend_buffer_free(ctx->state->vad_lstm_hidden_state_buffer);
-            ctx->state->vad_lstm_hidden_state_buffer = nullptr;
-        }
-        
-        // reset timers
-        ctx->state->t_encode_us = 0;
-        ctx->state->t_decode_us = 0;
-        ctx->state->t_feature_us = 0;
-
-        // --- --- --- --- --- ---
-
+    for (std::string line; line != "exit"; std::getline(std::cin, line)) {
         const auto fname_inp = line;
-        std::vector<double> pcmf32; // mono-channel F32 PCM
+
+        std::vector<double> pcmf32;               // mono-channel F32 PCM
 
         int sample_rate;
         if (!::load_wav_file(fname_inp.c_str(), &sample_rate, pcmf32)) {
@@ -489,6 +466,21 @@ int main(int argc, char ** argv) {
             continue;
         }
 
+        if (!params.no_prints) {
+            // print system information
+            fprintf(stderr, "\n");
+            fprintf(stderr, "system_info: n_threads = %d / %d | %s\n",
+                    params.n_threads*params.n_processors, std::thread::hardware_concurrency(), sense_voice_print_system_info());
+
+            // print some info about the processing
+            fprintf(stderr, "\n");
+            fprintf(stderr, "%s: processing audio (%d samples, %.5f sec) , %d threads, %d processors, lang = %s...\n",
+                    __func__,  int(pcmf32.size()), float(pcmf32.size())/sample_rate,
+                    params.n_threads, params.n_processors,
+                    params.language.c_str());
+            ctx->state->duration = float(pcmf32.size())/sample_rate;
+            fprintf(stderr, "\n");
+        }
         sense_voice_full_params wparams = sense_voice_full_default_params(SENSE_VOICE_SAMPLING_GREEDY);
 
         {
@@ -521,8 +513,8 @@ int main(int argc, char ** argv) {
                                                                                 ggml_nbytes(ctx->state->vad_lstm_context)
                                                                                         + ggml_backend_get_alignment(ctx->state->backends[0]));
                 ctx->state->vad_lstm_hidden_state_buffer = ggml_backend_alloc_buffer(ctx->state->backends[0],
-                                                                                    ggml_nbytes(ctx->state->vad_lstm_hidden_state)
-                                                                                            + ggml_backend_get_alignment(ctx->state->backends[0]));
+                                                                                     ggml_nbytes(ctx->state->vad_lstm_hidden_state)
+                                                                                             + ggml_backend_get_alignment(ctx->state->backends[0]));
                 auto context_alloc = ggml_tallocr_new(ctx->state->vad_lstm_context_buffer);
                 ggml_tallocr_alloc(&context_alloc, ctx->state->vad_lstm_context);
 
@@ -661,9 +653,10 @@ int main(int argc, char ** argv) {
             fflush(stdout);
         }
         SENSE_VOICE_LOG_INFO("\n%s: decoder audio use %f s, rtf is %f. \n\n",
-                            __func__,
-                            (ctx->state->t_encode_us + ctx->state->t_decode_us) / 1e6,
-                            (ctx->state->t_encode_us + ctx->state->t_decode_us) / (1e6 * ctx->state->duration));
+                              __func__,
+                              (ctx->state->t_encode_us + ctx->state->t_decode_us) / 1e6,
+                              (ctx->state->t_encode_us + ctx->state->t_decode_us) / (1e6 * ctx->state->duration));
+
     }
     sense_voice_free(ctx);
     return 0;

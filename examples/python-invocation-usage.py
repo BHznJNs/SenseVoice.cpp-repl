@@ -38,10 +38,12 @@ class SenseVoiceModel:
     def __init__(self,
         executable_path: str,
         model_path: str,
+        log_path: str,
         language: Literal["auto", "zh", "en", "yue", "ja", "ko"]="auto",
     ):
         self._executable_path = executable_path
         self._model_path = model_path
+        self._log_path = log_path
         self._worker = Thread(target=self.communicate_worker, args=[language])
         self._worker.start()
         self._loaded = Event()
@@ -73,6 +75,7 @@ class SenseVoiceModel:
             "-l", language,
             "-itn",
         ]
+        stderr_log = open(self._log_path, "a", encoding="utf-8")
         process = subprocess.Popen(
             args=args,
             stdin=subprocess.PIPE,
@@ -117,7 +120,8 @@ class SenseVoiceModel:
         except subprocess.TimeoutExpired:
             process.terminate()
             returncode = process.returncode
-
+        
+        stderr_log.close()
         if returncode == 0: return
         # read all stderr output for debugging
         sensevoice_error = process.stderr.readlines()
